@@ -132,7 +132,7 @@ export default function QuizGenerator() {
           <div className="flex justify-between items-center">
             <h2 className="text-2xl font-bold">Your Quiz on {topic}</h2>
             {!showResults && (
-              <button onClick={resetQuiz} className="btn btn-outline btn-sm">
+              <button onClick={resetQuiz} className="btn btn-primary btn-sm">
                 Start Over
               </button>
             )}

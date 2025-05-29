@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { saveQuizResult } from "../utils/progressStorage";
 
 export default function QuizGenerator() {
   const [topic, setTopic] = useState("");
@@ -12,6 +13,8 @@ export default function QuizGenerator() {
   const [error, setError] = useState("");
   const [score, setScore] = useState(0);
   const [isBackupSource, setIsBackupSource] = useState(false);
+  const [startTime, setStartTime] = useState(null);
+  const [timeTaken, setTimeTaken] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -28,6 +31,8 @@ export default function QuizGenerator() {
     setShowResults(false);
     setScore(0);
     setIsBackupSource(false);
+    setStartTime(null);
+    setTimeTaken(null);
 
     try {
       const response = await fetch("/api/generate-quiz", {
@@ -40,6 +45,7 @@ export default function QuizGenerator() {
       const data = await response.json();
 
       setQuestions(data.questions);
+      setStartTime(Date.now()); // Start timing the quiz
 
       // Check if we're using backup questions
       if (data.source === "backup") {
@@ -73,9 +79,30 @@ export default function QuizGenerator() {
       }
     });
 
+    const endTime = Date.now();
+    const quizTimeTaken = startTime
+      ? Math.round((endTime - startTime) / 1000)
+      : null;
+
     setScore(correctCount);
+    setTimeTaken(quizTimeTaken);
     setShowResults(true);
     setError("");
+
+    // Save the quiz result to localStorage
+    try {
+      saveQuizResult({
+        topic,
+        score: correctCount,
+        totalQuestions: questions.length,
+        timeTaken: quizTimeTaken,
+        isBackupSource,
+        questions,
+        userAnswers,
+      });
+    } catch (error) {
+      console.error("Failed to save quiz result:", error);
+    }
   };
 
   const resetQuiz = () => {
@@ -85,6 +112,17 @@ export default function QuizGenerator() {
     setTopic("");
     setScore(0);
     setIsBackupSource(false);
+    setStartTime(null);
+    setTimeTaken(null);
+  };
+
+  const formatTime = (seconds) => {
+    if (!seconds) return null;
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return minutes > 0
+      ? `${minutes}m ${remainingSeconds}s`
+      : `${remainingSeconds}s`;
   };
 
   return (
@@ -209,15 +247,30 @@ export default function QuizGenerator() {
                 {showResults && (
                   <div className="mt-4 p-3 rounded-lg bg-base-200">
                     {userAnswers[q.id] === q.correctAnswer ? (
-                      <p className="text-success font-medium">
-                        ✓ You answered correctly!
-                      </p>
+                      <div>
+                        <p className="text-success font-medium">
+                          ✓ You answered correctly!
+                        </p>
+                        {q.explanation && (
+                          <p className="text-sm text-base-content/70 mt-2">
+                            {q.explanation}
+                          </p>
+                        )}
+                      </div>
                     ) : (
-                      <p className="text-error font-medium">
-                        ✗ You selected "{q.options[userAnswers[q.id]]}".
-                        <br />
-                        The correct answer is: "{q.options[q.correctAnswer]}"
-                      </p>
+                      <div>
+                        <p className="text-error font-medium">
+                          ✗ You selected "{q.options[userAnswers[q.id]]}".
+                          <br />
+                          The correct answer is: "{q.options[q.correctAnswer]}"
+                        </p>
+                        {q.explanation && (
+                          <p className="text-sm text-base-content/70 mt-3 p-2 bg-info/10 rounded">
+                            <span className="font-medium">Explanation:</span>{" "}
+                            {q.explanation}
+                          </p>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
@@ -243,6 +296,11 @@ export default function QuizGenerator() {
                 <h2 className="card-title text-2xl justify-center">
                   Your Score: {score} out of {questions.length}
                 </h2>
+                {timeTaken && (
+                  <p className="text-lg text-base-content/70">
+                    Completed in {formatTime(timeTaken)}
+                  </p>
+                )}
                 <p className="text-xl mt-2">
                   {score === questions.length
                     ? "Perfect! You aced it! 🎉"
@@ -263,10 +321,13 @@ export default function QuizGenerator() {
                   value={score}
                   max={questions.length}
                 ></progress>
-                <div className="card-actions justify-center mt-6">
+                <div className="card-actions justify-center mt-6 gap-4">
                   <button className="btn btn-primary" onClick={resetQuiz}>
                     Try Another Topic
                   </button>
+                  <Link href="/progress" className="btn btn-outline">
+                    View Progress
+                  </Link>
                 </div>
               </div>
             </div>

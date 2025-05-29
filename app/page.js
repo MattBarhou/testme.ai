@@ -37,15 +37,16 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="card bg-base-100 shadow-xl">
+                <Link href="/progress" className="card bg-base-100 shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105 cursor-pointer">
                   <div className="card-body items-center text-center">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-pink-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                     </svg>
                     <h2 className="card-title">Track Progress</h2>
                     <p>See your improvement over time with detailed analytics</p>
+                    <div className="badge badge-primary mt-2">Click to view!</div>
                   </div>
-                </div>
+                </Link>
               </div>
 
               <Link href="/quiz" className="btn btn-primary btn-lg mt-8 px-10 animate-pulse hover:animate-none transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-xl">

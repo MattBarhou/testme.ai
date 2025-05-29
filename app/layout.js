@@ -1,6 +1,7 @@
 import { Exo } from "next/font/google";
 import "./globals.css";
 import AnimatedBackground from "../components/AnimatedBackground";
+import Navigation from "../components/Navigation";
 
 const exo = Exo({
   weight: ["400", "500", "700"],
@@ -19,7 +20,10 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body className={`${exo.className} antialiased`}>
         <AnimatedBackground />
-        {children}
+        <Navigation />
+        <main>
+          {children}
+        </main>
       </body>
     </html>
   );

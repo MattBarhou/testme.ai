@@ -26,23 +26,31 @@ export async function POST(request) {
 }
 
 async function generateQuestionsWithHuggingFace(topic) {
-    // Simplified prompt 
-    const prompt = `
-Create 10 multiple-choice quiz questions about "${topic}".
-Return only JSON in this format, with no other text:
+
+    const prompt = `Create 10 high-quality multiple-choice quiz questions about "${topic}". Follow these rules EXACTLY:
+
+1. Use POSITIVE questions - avoid "NOT", "EXCEPT", or negative phrasing 
+2. Each question should have exactly 4 answer options
+3. Only ONE option should be clearly correct
+4. Include a brief explanation for why the correct answer is right
+5. Make questions factually accurate and educational
+6. Use present-day knowledge and avoid controversial topics
+
+Return ONLY valid JSON in this exact format:
 [
   {
     "id": 1,
-    "question": "What is ${topic}?",
-    "options": ["Answer 1", "Answer 2", "Answer 3", "Answer 4"],
-    "correctAnswer": 2
+    "question": "What is the capital city of France?",
+    "options": ["London", "Paris", "Berlin", "Madrid"],
+    "correctAnswer": 1,
+    "explanation": "Paris is the capital and largest city of France, located in the north-central part of the country."
   }
 ]
-The correctAnswer should be a number 0-3 indicating which option is correct.
-`;
 
+The correctAnswer must be the index (0-3) of the correct option.
+Make sure explanations are helpful and educational.`;
 
-    const model = "mistralai/Mistral-7B-Instruct-v0.3";
+    const model = "mistralai/Mixtral-8x7B-Instruct-v0.1";
 
     try {
         // Check for API key
@@ -103,15 +111,43 @@ The correctAnswer should be a number 0-3 indicating which option is correct.
             responseText = JSON.stringify(result);
         }
 
-        // Try to find JSON in the response
-        const jsonMatch = responseText.match(/\[\s*\{[\s\S]*\}\s*\]/);
-        if (!jsonMatch) {
-            console.error("Failed to extract JSON from response:", responseText);
-            throw new Error("Failed to extract JSON from response");
+        console.log("Raw response text:", responseText);
+
+        // Clean up the response text and extract JSON
+        // Remove markdown code blocks
+        let cleanedText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+
+        // Try to find all JSON arrays in the response
+        const jsonArrayMatches = cleanedText.match(/\[\s*\{[\s\S]*?\}\s*\]/g);
+
+        if (!jsonArrayMatches || jsonArrayMatches.length === 0) {
+            console.error("No JSON arrays found in response:", cleanedText);
+            throw new Error("No valid JSON found in response");
         }
 
+        // Find the largest JSON array (likely the complete questions list)
+        let largestJson = '';
+        let maxLength = 0;
+
+        for (const jsonStr of jsonArrayMatches) {
+            if (jsonStr.length > maxLength) {
+                maxLength = jsonStr.length;
+                largestJson = jsonStr;
+            }
+        }
+
+        console.log("Selected JSON:", largestJson);
+
         // Parse and validate the JSON
-        const parsedQuestions = JSON.parse(jsonMatch[0]);
+        let parsedQuestions;
+        try {
+            parsedQuestions = JSON.parse(largestJson);
+        } catch (parseError) {
+            console.error("JSON parse error:", parseError);
+            console.error("Attempted to parse:", largestJson);
+            throw new Error("Failed to parse JSON response");
+        }
+
         console.log("Parsed questions:", parsedQuestions);
 
         if (!Array.isArray(parsedQuestions) || parsedQuestions.length === 0) {
@@ -127,7 +163,8 @@ The correctAnswer should be a number 0-3 indicating which option is correct.
                 : [`Option A about ${topic}`, `Option B about ${topic}`, `Option C about ${topic}`, `Option D about ${topic}`],
             correctAnswer: typeof q.correctAnswer === 'number' && q.correctAnswer >= 0 && q.correctAnswer <= 3
                 ? q.correctAnswer
-                : 0
+                : 0,
+            explanation: q.explanation || `This is the correct answer about ${topic}.`
         }));
     } catch (error) {
         console.error("Error generating questions with HuggingFace:", error);
@@ -139,97 +176,117 @@ The correctAnswer should be a number 0-3 indicating which option is correct.
 function generateBackupQuestions(topic, count = 10) {
     const questions = [];
 
-    // Question templates
+    // Question templates with proper correct answers
     const templates = [
         {
-            question: `What is the main focus of ${topic}?`,
+            question: `What is the main focus of studying ${topic}?`,
             options: [
                 `Historical development`,
-                `Theoretical foundations`,
-                `Practical applications`,
+                `Understanding its principles and applications`, // Correct answer
+                `Memorizing facts`,
                 `Cultural impact`
             ],
+            correctAnswer: 1,
+            explanation: `The main focus of studying any subject is to understand its principles and applications, which enables practical use and deeper comprehension.`
         },
         {
-            question: `Which field is most closely related to ${topic}?`,
+            question: `Which approach is most effective when learning about ${topic}?`,
             options: [
-                `Mathematics`,
-                `Philosophy`,
-                `Engineering`,
-                `Social sciences`
+                `Passive reading only`,
+                `Active research and practice`, // Correct answer
+                `Avoiding difficult concepts`,
+                `Memorizing definitions only`
             ],
+            correctAnswer: 1,
+            explanation: `Active research and practice are the most effective learning approaches as they engage multiple cognitive processes and reinforce understanding.`
         },
         {
-            question: `When did ${topic} emerge as a distinct field?`,
+            question: `What characterizes modern understanding of ${topic}?`,
             options: [
-                `Ancient times`,
-                `17th-18th centuries`,
-                `19th-20th centuries`,
-                `21st century`
+                `It remains unchanged from historical views`,
+                `It continues to evolve with new discoveries`, // Correct answer
+                `It is completely theoretical`,
+                `It has no practical applications`
             ],
+            correctAnswer: 1,
+            explanation: `Modern understanding of most subjects continues to evolve as new research, technology, and discoveries provide fresh insights and perspectives.`
         },
         {
-            question: `Which of these is a fundamental principle in ${topic}?`,
+            question: `Which statement best describes the importance of ${topic}?`,
             options: [
-                `Conservation of energy`,
-                `Systematic organization`,
-                `Empirical verification`,
-                `Logical reasoning`
+                `It has limited real-world applications`,
+                `It provides valuable knowledge and insights`, // Correct answer
+                `It is only useful for academic purposes`,
+                `It is outdated and irrelevant`
             ],
+            correctAnswer: 1,
+            explanation: `The importance of any field of study lies in providing valuable knowledge and insights that can be applied to understand and improve various aspects of life.`
         },
         {
-            question: `Who is often credited with major contributions to ${topic}?`,
+            question: `What is a key benefit of understanding ${topic}?`,
             options: [
-                `Ancient Greek philosophers`,
-                `Renaissance thinkers`,
-                `Enlightenment scientists`,
-                `Modern researchers`
+                `It requires no effort to learn`,
+                `It enhances problem-solving abilities`, // Correct answer
+                `It guarantees immediate success`,
+                `It eliminates all uncertainties`
             ],
+            correctAnswer: 1,
+            explanation: `Understanding any subject enhances problem-solving abilities by providing tools, frameworks, and knowledge that can be applied to tackle various challenges.`
         },
         {
-            question: `What is a common application of ${topic} today?`,
+            question: `How does ${topic} relate to other fields of study?`,
             options: [
-                `Medical diagnosis`,
-                `Environmental monitoring`,
-                `Educational assessment`,
-                `Business analytics`
+                `It exists in complete isolation`,
+                `It connects with and influences other areas`, // Correct answer
+                `It contradicts all other knowledge`,
+                `It is unrelated to practical applications`
             ],
+            correctAnswer: 1,
+            explanation: `Most fields of study are interconnected and influence each other, creating a web of knowledge that enhances understanding across disciplines.`
         },
         {
-            question: `Which statement best describes the methodology used in ${topic}?`,
+            question: `What is essential for mastering ${topic}?`,
             options: [
-                `Qualitative analysis of subjective data`,
-                `Quantitative measurement of objective phenomena`,
-                `Theoretical modeling of complex systems`,
-                `Experimental testing of hypotheses`
+                `Avoiding challenging questions`,
+                `Consistent study and practice`, // Correct answer
+                `Relying only on basic concepts`,
+                `Ignoring foundational principles`
             ],
+            correctAnswer: 1,
+            explanation: `Mastering any subject requires consistent study and practice, which builds understanding gradually and reinforces learning through repetition.`
         },
         {
-            question: `How has the understanding of ${topic} evolved over time?`,
+            question: `Which factor contributes most to expertise in ${topic}?`,
             options: [
-                `From practical to theoretical`,
-                `From simple to complex`,
-                `From specialized to interdisciplinary`,
-                `From descriptive to analytical`
+                `Natural talent alone`,
+                `Dedication and continuous learning`, // Correct answer
+                `Memorizing textbooks`,
+                `Avoiding difficult problems`
             ],
+            correctAnswer: 1,
+            explanation: `Expertise in any field comes primarily from dedication and continuous learning, as knowledge and skills develop through sustained effort over time.`
         },
         {
-            question: `What challenges does contemporary ${topic} face?`,
+            question: `What makes ${topic} valuable in today's world?`,
             options: [
-                `Integration with new technologies`,
-                `Ethical considerations`,
-                `Funding limitations`,
-                `Public understanding`
+                `It is purely theoretical`,
+                `It offers practical solutions and insights`, // Correct answer
+                `It requires no critical thinking`,
+                `It has no modern applications`
             ],
+            correctAnswer: 1,
+            explanation: `The value of any field of study in today's world comes from its ability to offer practical solutions and insights that can address real-world challenges.`
         },
         {
-            question: `What is the relationship between ${topic} and innovation?`,
+            question: `How should one approach learning ${topic}?`,
             options: [
-                `${topic} drives innovation through new discoveries`,
-                `Innovation provides tools for advancing ${topic}`,
-                `${topic} and innovation develop independently`,
-                `${topic} evaluates the impacts of innovation`
+                `With a passive mindset`,
+                `With curiosity and critical thinking`, // Correct answer
+                `By avoiding complex concepts`,
+                `By memorizing without understanding`
             ],
+            correctAnswer: 1,
+            explanation: `Effective learning requires curiosity and critical thinking, which encourage deeper engagement with the material and better retention of knowledge.`
         }
     ];
 
@@ -240,9 +297,10 @@ function generateBackupQuestions(topic, count = 10) {
             id: i + 1,
             question: template.question,
             options: template.options,
-            correctAnswer: Math.floor(Math.random() * 4), // Random correct answer
+            correctAnswer: template.correctAnswer,
+            explanation: template.explanation
         });
     }
 
     return questions;
-} 
+}

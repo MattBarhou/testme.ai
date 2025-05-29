@@ -42,9 +42,14 @@ The correctAnswer should be a number 0-3 indicating which option is correct.
 `;
 
 
-    const model = "mistralai/Mistral-7B-Instruct-v0.2"; // Alternative to flan-t5-xxl
+    const model = "mistralai/Mistral-7B-Instruct-v0.3";
 
     try {
+        // Check for API key
+        if (!process.env.HUGGINGFACE_API_KEY) {
+            throw new Error("HUGGINGFACE_API_KEY is not configured");
+        }
+
         // Make the API call to HuggingFace
         const response = await fetch(
             `https://api-inference.huggingface.co/models/${model}`,
@@ -66,20 +71,37 @@ The correctAnswer should be a number 0-3 indicating which option is correct.
         );
 
         if (!response.ok) {
+            const errorText = await response.text();
             console.error(`API request failed with status ${response.status}`);
-            console.error(`Response: ${await response.text()}`);
-            throw new Error(`API request failed with status ${response.status}`);
+            console.error(`Response: ${errorText}`);
+
+            // Check for specific errors
+            if (response.status === 404) {
+                throw new Error(`Model ${model} not found or not available`);
+            } else if (response.status === 401 || response.status === 403) {
+                throw new Error("API key is invalid or you don't have access to this model");
+            } else if (response.status === 503) {
+                throw new Error("Model is currently loading or unavailable. Please try again later.");
+            }
+
+            throw new Error(`API request failed with status ${response.status}: ${errorText}`);
         }
 
         const result = await response.json();
         console.log("API response:", result);
 
         // The response format varies by model, extract the text
-        const responseText = typeof result === 'string'
-            ? result
-            : Array.isArray(result) && result[0]?.generated_text
-                ? result[0].generated_text
-                : JSON.stringify(result);
+        let responseText;
+        if (typeof result === 'string') {
+            responseText = result;
+        } else if (Array.isArray(result) && result.length > 0) {
+            // Handle different response formats
+            responseText = result[0]?.generated_text || result[0]?.text || JSON.stringify(result);
+        } else if (result.generated_text) {
+            responseText = result.generated_text;
+        } else {
+            responseText = JSON.stringify(result);
+        }
 
         // Try to find JSON in the response
         const jsonMatch = responseText.match(/\[\s*\{[\s\S]*\}\s*\]/);

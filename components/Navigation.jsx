@@ -15,22 +15,8 @@ export default function Navigation() {
   return (
     <nav className="navbar bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 dark:from-blue-800/40 dark:via-purple-800/40 dark:to-pink-800/40 backdrop-blur-xl border-b border-base-300/50 sticky top-0 z-50 shadow-md shadow-black/5">
       <div className="container mx-auto">
-        <div className="navbar-start">
-          <Link
-            href="/"
-            className="btn btn-ghost text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 hover:from-blue-700 hover:via-purple-700 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105"
-          >
-            <span className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center text-white text-sm font-bold shadow-lg">
-                AI
-              </div>
-              Quiz App
-            </span>
-          </Link>
-        </div>
-
         <div className="navbar-center hidden lg:flex">
-          <div className="flex items-center gap-2">
+          <div className="flex mt-3 items-center gap-2">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
@@ -75,7 +61,7 @@ export default function Navigation() {
             </div>
             <ul
               tabIndex={0}
-              className="menu menu-sm dropdown-content mt-3 z-[1] p-3 shadow-xl bg-base-100/95 backdrop-blur-xl rounded-2xl w-56 border border-base-300/50"
+              className="menu menu-sm dropdown-content z-[1] p-3 shadow-xl bg-base-100/95 backdrop-blur-xl rounded-2xl w-56 border border-base-300/50"
             >
               {navLinks.map((link) => (
                 <li key={link.href} className="mb-1">

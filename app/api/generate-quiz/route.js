@@ -7,16 +7,22 @@ export async function POST(request) {
         }
 
         try {
-            // Use HuggingFace's API to generate quiz questions
-            const questions = await generateQuestionsWithHuggingFace(topic);
-            return Response.json({ questions });
+            // Use Google Gemini to generate quiz questions
+            const questions = await generateQuestionsWithAI(topic);
+            return Response.json({ questions, source: "gemini" });
         } catch (apiError) {
-            console.error('AI API error:', apiError);
-            // Fallback to our backup generator if the API fails
+            console.error('Gemini API error:', apiError);
+            console.error('Error details:', {
+                message: apiError.message,
+                stack: apiError.stack,
+                topic: topic
+            });
+            // Fallback to backup generator if Gemini API fails
             const backupQuestions = generateBackupQuestions(topic);
             return Response.json({
                 questions: backupQuestions,
-                source: "backup"
+                source: "backup",
+                error: apiError.message
             });
         }
     } catch (error) {
@@ -25,7 +31,16 @@ export async function POST(request) {
     }
 }
 
-async function generateQuestionsWithHuggingFace(topic) {
+async function generateQuestionsWithAI(topic) {
+    console.log('Generating quiz questions with Google Gemini API...');
+    return await generateWithGemini(topic);
+}
+
+async function generateWithGemini(topic) {
+    // Check for Gemini API key
+    if (!process.env.GEMINI_API_KEY) {
+        throw new Error("GEMINI_API_KEY is not configured");
+    }
 
     const prompt = `Create 10 high-quality multiple-choice quiz questions about "${topic}". Follow these rules EXACTLY:
 
@@ -34,7 +49,7 @@ async function generateQuestionsWithHuggingFace(topic) {
 3. Only ONE option should be clearly correct
 4. Include a brief explanation for why the correct answer is right
 5. Make questions factually accurate and educational
-6. Use present-day knowledge and avoid controversial topics
+6. Use present-day knowledge and ensure questions are not too easy
 
 Return ONLY valid JSON in this exact format:
 [
@@ -50,126 +65,91 @@ Return ONLY valid JSON in this exact format:
 The correctAnswer must be the index (0-3) of the correct option.
 Make sure explanations are helpful and educational.`;
 
-    const model = "mistralai/Mixtral-8x7B-Instruct-v0.1";
-
-    try {
-        // Check for API key
-        if (!process.env.HUGGINGFACE_API_KEY) {
-            throw new Error("HUGGINGFACE_API_KEY is not configured");
+    const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{ text: prompt }]
+                }],
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: 2000,
+                }
+            })
         }
+    );
 
-        // Make the API call to HuggingFace
-        const response = await fetch(
-            `https://api-inference.huggingface.co/models/${model}`,
-            {
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${process.env.HUGGINGFACE_API_KEY}`
-                },
-                method: "POST",
-                body: JSON.stringify({
-                    inputs: prompt,
-                    parameters: {
-                        max_new_tokens: 2000,
-                        temperature: 0.7,
-                        return_full_text: false
-                    }
-                }),
-            }
-        );
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`API request failed with status ${response.status}`);
-            console.error(`Response: ${errorText}`);
-
-            // Check for specific errors
-            if (response.status === 404) {
-                throw new Error(`Model ${model} not found or not available`);
-            } else if (response.status === 401 || response.status === 403) {
-                throw new Error("API key is invalid or you don't have access to this model");
-            } else if (response.status === 503) {
-                throw new Error("Model is currently loading or unavailable. Please try again later.");
-            }
-
-            throw new Error(`API request failed with status ${response.status}: ${errorText}`);
-        }
-
-        const result = await response.json();
-        console.log("API response:", result);
-
-        // The response format varies by model, extract the text
-        let responseText;
-        if (typeof result === 'string') {
-            responseText = result;
-        } else if (Array.isArray(result) && result.length > 0) {
-            // Handle different response formats
-            responseText = result[0]?.generated_text || result[0]?.text || JSON.stringify(result);
-        } else if (result.generated_text) {
-            responseText = result.generated_text;
-        } else {
-            responseText = JSON.stringify(result);
-        }
-
-        console.log("Raw response text:", responseText);
-
-        // Clean up the response text and extract JSON
-        // Remove markdown code blocks
-        let cleanedText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-
-        // Try to find all JSON arrays in the response
-        const jsonArrayMatches = cleanedText.match(/\[\s*\{[\s\S]*?\}\s*\]/g);
-
-        if (!jsonArrayMatches || jsonArrayMatches.length === 0) {
-            console.error("No JSON arrays found in response:", cleanedText);
-            throw new Error("No valid JSON found in response");
-        }
-
-        // Find the largest JSON array (likely the complete questions list)
-        let largestJson = '';
-        let maxLength = 0;
-
-        for (const jsonStr of jsonArrayMatches) {
-            if (jsonStr.length > maxLength) {
-                maxLength = jsonStr.length;
-                largestJson = jsonStr;
-            }
-        }
-
-        console.log("Selected JSON:", largestJson);
-
-        // Parse and validate the JSON
-        let parsedQuestions;
-        try {
-            parsedQuestions = JSON.parse(largestJson);
-        } catch (parseError) {
-            console.error("JSON parse error:", parseError);
-            console.error("Attempted to parse:", largestJson);
-            throw new Error("Failed to parse JSON response");
-        }
-
-        console.log("Parsed questions:", parsedQuestions);
-
-        if (!Array.isArray(parsedQuestions) || parsedQuestions.length === 0) {
-            throw new Error("Invalid questions format");
-        }
-
-        // Format and validate the questions
-        return parsedQuestions.slice(0, 10).map((q, index) => ({
-            id: index + 1,
-            question: q.question || `Question about ${topic}`,
-            options: Array.isArray(q.options) && q.options.length === 4
-                ? q.options
-                : [`Option A about ${topic}`, `Option B about ${topic}`, `Option C about ${topic}`, `Option D about ${topic}`],
-            correctAnswer: typeof q.correctAnswer === 'number' && q.correctAnswer >= 0 && q.correctAnswer <= 3
-                ? q.correctAnswer
-                : 0,
-            explanation: q.explanation || `This is the correct answer about ${topic}.`
-        }));
-    } catch (error) {
-        console.error("Error generating questions with HuggingFace:", error);
-        throw error;
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Gemini API failed with status ${response.status}:`, errorText);
+        throw new Error(`Gemini API failed: ${response.status} ${errorText}`);
     }
+
+    const result = await response.json();
+    console.log("Gemini API response:", result);
+
+    // Extract text from Gemini response
+    const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!responseText) {
+        throw new Error("No text content in Gemini response");
+    }
+
+    console.log("Gemini response text:", responseText);
+
+    // Parse JSON from response
+    let cleanedText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+
+    // Try to find JSON array in the response
+    const jsonArrayMatches = cleanedText.match(/\[\s*\{[\s\S]*?\}\s*\]/g);
+
+    if (!jsonArrayMatches || jsonArrayMatches.length === 0) {
+        console.error("No JSON arrays found in Gemini response:", cleanedText);
+        throw new Error("No valid JSON found in Gemini response");
+    }
+
+    // Use the largest JSON array
+    let largestJson = '';
+    let maxLength = 0;
+
+    for (const jsonStr of jsonArrayMatches) {
+        if (jsonStr.length > maxLength) {
+            maxLength = jsonStr.length;
+            largestJson = jsonStr;
+        }
+    }
+
+    console.log("Selected JSON from Gemini:", largestJson);
+
+    let parsedQuestions;
+    try {
+        parsedQuestions = JSON.parse(largestJson);
+    } catch (parseError) {
+        console.error("JSON parse error from Gemini:", parseError);
+        console.error("Attempted to parse:", largestJson);
+        throw new Error("Failed to parse JSON from Gemini response");
+    }
+
+    if (!Array.isArray(parsedQuestions) || parsedQuestions.length === 0) {
+        throw new Error("Invalid questions format from Gemini");
+    }
+
+    // Format and validate the questions
+    return parsedQuestions.slice(0, 10).map((q, index) => ({
+        id: index + 1,
+        question: q.question || `Question about ${topic}`,
+        options: Array.isArray(q.options) && q.options.length === 4
+            ? q.options
+            : [`Option A about ${topic}`, `Option B about ${topic}`, `Option C about ${topic}`, `Option D about ${topic}`],
+        correctAnswer: typeof q.correctAnswer === 'number' && q.correctAnswer >= 0 && q.correctAnswer <= 3
+            ? q.correctAnswer
+            : 0,
+        explanation: q.explanation || `This is the correct answer about ${topic}.`
+    }));
 }
 
 // Backup question generator in case the API fails
